@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>World's Hardest Game - Ultimate Space Edition</title>
+<style>
+  body { margin: 0; overflow: hidden; background: black; font-family: Arial, sans-serif; color: #fff; }
+  #ui { position: absolute; top: 10px; left: 10px; font-size: 20px; }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+<div id="ui">
+  <span id="level">Level: 1</span> |
+  <span id="deaths">Deaths: 0</span>
+</div>
+
+<audio id="deathSound" src="https://freesound.org/data/previews/256/256113_3263906-lq.mp3"></audio>
+<audio id="goalSound" src="https://freesound.org/data/previews/331/331912_3248244-lq.mp3"></audio>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+let width = window.innerWidth;
+let height = window.innerHeight;
+canvas.width = width;
+canvas.height = height;
+
+const uiLevel = document.getElementById("level");
+const uiDeaths = document.getElementById("deaths");
+const deathSound = document.getElementById("deathSound");
+const goalSound = document.getElementById("goalSound");
+
+// PLAYER
+let player = { x: 50, y: 50, w: 30, h: 30, speed: 5 };
+let trail = [];
+const TRAIL_LENGTH = 10;
+
+// GAME VARIABLES
+let walls = [];
+let obstacles = [];
+let goal = { x: width - 80, y: height - 80, w: 50, h: 50, pulse:0 };
+let deaths = 0;
+let level = 1;
+
+// STAR BACKGROUND
+const stars = [];
+for (let i = 0; i < 500; i++) stars.push({x: Math.random()*width, y: Math.random()*height, r: Math.random()*2});
+
+// INPUT
+const keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+// RESET PLAYER
+function resetPlayer() { player.x = 50; player.y = 50; trail = []; }
+
+// COLLISION
+function collide(a,b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+// PLAYER TRAIL
+function updateTrail() { trail.push({x:player.x, y:player.y}); if(trail.length>TRAIL_LENGTH) trail.shift(); }
+function drawTrail() { trail.forEach((t,i)=>{ ctx.fillStyle=`rgba(255,0,0,${(i+1)/trail.length/2})`; ctx.fillRect(t.x,t.y,player.w,player.h); }); }
+
+// RESET ON DEATH
+function die() { deaths++; uiDeaths.textContent = "Deaths: "+deaths; resetPlayer(); deathSound.currentTime=0; deathSound.play(); }
+
+// CREATE LEVELS (procedural difficulty scaling)
+function createLevel(lvl){
+  walls = [];
+  obstacles = [];
+  goal.x = width - 80; goal.y = height - 80; goal.pulse = 0;
+
+  // Outer walls
+  walls.push({x:0,y:0,w:width,h:10});
+  walls.push({x:0,y:0,w:10,h:height});
+  walls.push({x:0,y:height-10,w:width,h:10});
+  walls.push({x:width-10,y:0,w:10,h:height});
+
+  // Determine number of obstacles: more per level
+  let numObstacles = Math.min(5 + lvl, 50);
+
+  // Determine obstacle speed: increases with level
+  let speedBase = 2 + lvl*0.2;
+
+  // Create obstacles in patterns
+  for(let i=0;i<numObstacles;i++){
+    let horizontal = Math.random()<0.5;
+    let obs = {
+      x: Math.random()*(width-200)+50,
+      y: Math.random()*(height-200)+50,
+      w: horizontal?100:20,
+      h: horizontal?20:100,
+      vx: horizontal?(Math.random()<0.5?1:-1)*speedBase:0,
+      vy: horizontal?0:(Math.random()<0.5?1:-1)*speedBase,
+      color:"#"+Math.floor(Math.random()*16777215).toString(16)
+    };
+    obstacles.push(obs);
+  }
+
+  // Random maze walls for higher levels
+  if(lvl>20){
+    let wallCount = Math.min(5 + Math.floor(lvl/5), 20);
+    for(let i=0;i<wallCount;i++){
+      walls.push({
+        x:Math.random()*(width-200)+50,
+        y:Math.random()*(height-200)+50,
+        w: Math.random()*150 + 50,
+        h: 20
+      });
+    }
+  }
+  if(lvl>50){
+    for(let i=0;i<10;i++){
+      walls.push({
+        x:Math.random()*(width-200)+50,
+        y:Math.random()*(height-200)+50,
+        w:20,
+        h:Math.random()*150+50
+      });
+    }
+  }
+}
+
+// DRAW STAR BACKGROUND
+function drawStars(){ stars.forEach(s=>{ ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill(); }); }
+
+// GAME LOOP
+function loop(){
+  ctx.clearRect(0,0,width,height);
+  drawStars();
+
+  // MOVE PLAYER
+  if(keys["ArrowUp"]||keys["w"]) player.y-=player.speed;
+  if(keys["ArrowDown"]||keys["s"]) player.y+=player.speed;
+  if(keys["ArrowLeft"]||keys["a"]) player.x-=player.speed;
+  if(keys["ArrowRight"]||keys["d"]) player.x+=player.speed;
+
+  updateTrail();
+  drawTrail();
+  ctx.fillStyle="red"; ctx.fillRect(player.x,player.y,player.w,player.h);
+
+  // DRAW WALLS
+  ctx.fillStyle="#666"; walls.forEach(w=>ctx.fillRect(w.x,w.y,w.w,w.h));
+  walls.forEach(w=>{if(collide(player,w)) die();});
+
+  // MOVE OBSTACLES
+  obstacles.forEach(obs=>{
+    obs.x+=obs.vx; obs.y+=obs.vy;
+    if(obs.x<10||obs.x+obs.w>width-10) obs.vx*=-1;
+    if(obs.y<10||obs.y+obs.h>height-10) obs.vy*=-1;
+    ctx.fillStyle=obs.color; ctx.fillRect(obs.x,obs.y,obs.w,obs.h);
+    if(collide(player,obs)) die();
+  });
+
+  // DRAW GOAL (pulsing)
+  goal.pulse += 0.05;
+  let pulseSize = 10 * Math.sin(goal.pulse);
+  ctx.fillStyle="lime";
+  ctx.fillRect(goal.x-goal.w/2+pulseSize/2, goal.y-goal.h/2+pulseSize/2, goal.w+pulseSize, goal.h+pulseSize);
+
+  // CHECK GOAL
+  if(collide(player,goal)){
+    goalSound.currentTime=0;
+    goalSound.play();
+    level++;
+    if(level>100) level=1;
+    uiLevel.textContent="Level: "+level;
+    resetPlayer();
+    createLevel(level);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// INITIALIZE
+createLevel(level);
+loop();
+</script>
+
+</body>
+</html>
